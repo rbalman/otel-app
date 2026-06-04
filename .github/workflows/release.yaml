@@ -27,7 +27,7 @@ jobs:
     name: code scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v5.0.0
 
       - uses: actions/setup-go@v5.5.0
         with:
@@ -45,7 +45,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v5.0.0
         with:
           fetch-depth: 0
 
@@ -87,6 +87,7 @@ jobs:
           output: trivy-results.sarif
           severity: CRITICAL
           exit-code: 0
+          trivy-flags: --skip-version-check
 
       - name: upload scan results
         if: always()
@@ -113,7 +114,7 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v5.0.0
 
       - name: push git tag
         run: |
