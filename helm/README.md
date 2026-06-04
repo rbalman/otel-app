@@ -12,13 +12,13 @@ helm repo update
 ## Install
 
 ```bash
-helm install demo otel-app/demo
+helm install otel-app otel-app/otel-app-chart
 ```
 
 With custom values:
 
 ```bash
-helm install demo otel-app/demo \
+helm install otel-app otel-app/otel-app-chart \
   --set image.tag=v0.1.0 \
   --set otel.endpoint=otel-collector.monitoring.svc.cluster.local:4317
 ```
