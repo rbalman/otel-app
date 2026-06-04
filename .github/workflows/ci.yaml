@@ -1,0 +1,171 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      push_image:
+        description: Push image to registry?
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  packages: write
+  security-events: write
+
+env:
+  IMAGE: balman/otel-demo
+
+jobs:
+  # ── 1. code quality & security ───────────────────────────────────────────────
+  scan-code:
+    name: code scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-go@v5.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: vet
+        run: go vet ./...
+
+      - name: govulncheck
+        uses: golang/govulncheck-action@v1.0.4
+
+      - name: gosec
+        uses: securego/gosec@v2.22.1
+        with:
+          args: ./...
+
+  # ── 2. build & push ──────────────────────────────────────────────────────────
+  build:
+    name: build & push
+    runs-on: ubuntu-latest
+    needs: scan-code
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tags: ${{ steps.meta.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0   # full history needed for semver
+
+      - name: compute version
+        id: version
+        run: |
+          # use latest semver tag as base, default to v0.0.0 if none
+          BASE=$(git tag --list 'v*' --sort=-version:refname | head -1)
+          BASE=${BASE:-v0.0.0}
+
+          MAJOR=$(echo $BASE | cut -d. -f1 | tr -d v)
+          MINOR=$(echo $BASE | cut -d. -f2)
+          PATCH=$(echo $BASE | cut -d. -f3)
+
+          # bump patch on every push to main; keep version as-is on PRs
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            PATCH=$((PATCH + 1))
+          fi
+
+          NEW="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "version=${NEW}" >> $GITHUB_OUTPUT
+          echo "Computed version: ${NEW}"
+
+      - name: docker metadata
+        id: meta
+        uses: docker/metadata-action@v5.7.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-,format=short
+
+      - uses: docker/setup-buildx-action@v3.10.0
+
+      - name: login to docker hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3.4.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: build (and push on main)
+        uses: docker/build-push-action@v6.18.0
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+  # ── 3. image scan ────────────────────────────────────────────────────────────
+  scan-image:
+    name: image scan
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.31.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ needs.build.outputs.version }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 1
+
+      - name: upload scan results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3.28.18
+        with:
+          sarif_file: trivy-results.sarif
+
+  # ── 4. tag & update manifests in gokite repo ─────────────────────────────────
+  release:
+    name: tag & update manifests
+    runs-on: ubuntu-latest
+    needs: [build, scan-image]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: push git tag
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ needs.build.outputs.version }}
+          git push origin ${{ needs.build.outputs.version }}
+
+      - name: checkout gokite repo
+        uses: actions/checkout@v4.2.2
+        with:
+          repository: rbalman/gokite
+          token: ${{ secrets.GOKITE_GITHUB_TOKEN }}
+          path: gokite
+
+      - name: update image tag in dev values
+        run: |
+          sed -i "s|tag:.*|tag: ${{ needs.build.outputs.version }}|" \
+            gokite/dev/apps/demo/values.yaml
+
+      - name: commit manifest update
+        run: |
+          cd gokite
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dev/apps/demo/values.yaml
+          git diff --staged --quiet || \
+            git commit -m "chore: bump otel-demo to ${{ needs.build.outputs.version }}"
+          git push
