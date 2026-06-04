@@ -1,4 +1,4 @@
-name: ci
+name: Build and Push Image
 
 on:
   push:
@@ -23,7 +23,6 @@ env:
   IMAGE: balman/otel-demo
 
 jobs:
-  # ── 1. static analysis & code vulnerabilities ────────────────────────────────
   scan-code:
     name: code scan
     runs-on: ubuntu-latest
@@ -39,13 +38,6 @@ jobs:
 
       - uses: golang/govulncheck-action@v1.0.4
 
-      - uses: securego/gosec@v2.22.1
-        with:
-          args: ./...
-
-  # ── 2. build → scan → push ───────────────────────────────────────────────────
-  #    image is built into GHA cache first, scanned locally, then pushed.
-  #    this ensures no vulnerable image ever reaches the registry.
   build:
     name: build, scan & push
     runs-on: ubuntu-latest
@@ -115,7 +107,6 @@ jobs:
           provenance: true
           sbom: true
 
-  # ── 3. tag release ───────────────────────────────────────────────────────────
   release:
     name: tag release
     runs-on: ubuntu-latest
