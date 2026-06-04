@@ -1,0 +1,14 @@
+apiVersion: v1
+entries:
+  otel-app-chart:
+  - apiVersion: v2
+    appVersion: 0.0.3
+    created: "2026-06-04T04:24:27.773325634Z"
+    description: Otel demo app chart
+    digest: f1d918e08e8149dadc66e9cde19b663b8970af10f527cc4f607dbbba48825459
+    name: otel-app-chart
+    type: application
+    urls:
+    - https://github.com/rbalman/otel-app/releases/download/otel-app-chart-0.2.0/otel-app-chart-0.2.0.tgz
+    version: 0.2.0
+generated: "2026-06-04T04:24:27.773331806Z"
