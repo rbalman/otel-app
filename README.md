@@ -1,58 +1,95 @@
 # otel-app
 
-Mark:
-    - sbom
-    - better static code analysis tools
-    - caching
-    - docker bake built tool
+A Go HTTP service instrumented with OpenTelemetry, packaged as a multi-arch Docker image and deployed via Helm.
 
+## Overview
 
-## Security
-How would I secure this system in production is that. 
+The application exposes a small set of HTTP endpoints that demonstrate distributed tracing (OTLP/gRPC), Prometheus metrics, and structured JSON logs — all correlated by a `request_id` propagated through OTel baggage.
 
-I usually like to think production security in 4 Layers commonly known as 4Cs. `Cloud`, `Cluster`, `Container`, `Code`. We should secure each 
+### Endpoints`
 
-Cloud
-- CSPM tool or Config tracking tools like 
-- CloudTrail logs and events tracking
-- Only allowing CD to manage production account/infra
-- Drift detection and reporting
-- DR drills and Backup Restore mechanism
-- IAM best practices, read only acess to the cloud envrionment
-- Use Github OIDC to deploy changes
-- Secure Cloud with SSO logins
-- No static IAM credentails should be used
-- Use proper VPC, subnet, NACLs, firewall practices
-- Employ WAF, Rate limiting, DDOS protection
-- For mission critical accounts we can even restrict all the IAM access with IP whitesliting which will prevent malacious actor to access AWS APIs even if credentails are leaked.
-- Use SSO and RBAC for accessing tools like Arogcd
-- Using VPC is not enough, organization has complex acess requirements, multiple roles, business needs, internal tools. Use zero trust mesh vpns like tailscale for security, auditing, speed and centralized access managmenet.
-- Never expose internal toolings in public internet even if they have authentication in place. eg. grafana, prometheus, argocd endpoints should never have public endpoints.
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Liveness check — returns `{"status":"ok"}` |
+| GET | `/ready` | Readiness check — returns `{"status":"ready"}` |
+| GET | `/metrics` | Prometheus metrics scrape endpoint |
+| GET | `/api/hello?name=<n>` | Greeting with child span for input validation |
+| GET | `/api/items` | Simulates cache lookup + optional DB query |
+| GET | `/api/error` | Randomly fails ~60 % of the time (error-rate demo) |
 
-Cluster
-- Practice sound RBAC policies
-- Use external secrets management services like hashicorp vault, secrets manager, 1password
-- Use secrets management controllers like external secrets manager
-- Logging and monitoring control plane components logs and metrics
-- Whenever possible use managed/vetted amis for hosting workloads
-- Use advance node management/autoscaling tools like karpenter for better recycling of amis/k8s version
-- Timely ugprading of k8s version and controllers along with them
-- Never use latest tag images, always prefer to use specific version
-- Employ CNIs that provide better network policies or visibility like Cilium.
-- Create and employ sound network policies
+### Observability signals
 
+- **Traces** — exported via OTLP/gRPC to an OpenTelemetry Collector; every request gets a root span with child spans for sub-operations
+- **Metrics** — `http_request_duration_seconds` (histogram), `http_requests_total`, `http_errors_total` scraped by Prometheus
+- **Logs** — structured JSON via `log/slog`, enriched with `trace_id`, `span_id`, and `request_id`
+- **Baggage** — a `request_id` (UUID) is generated per request, stored in [OTel baggage](https://opentelemetry.io/docs/concepts/signals/baggage/), and propagated to downstream services; it is also attached as a span attribute and injected into every log line, enabling correlation across traces, metrics, and logs in tools like Grafana
 
-Container
-- Use minimal images or distroless image to reduce attack surface and bloatware
-- Always prefer to run container as non root user
-- Use multi stage build to remove built generated files, folder and layers
-- Use vetted base image like from chainguard if possible
-- Never use latest tag and rather try to use specific version.
+## Running locally
 
-Code
-- Shift left code scanning by introducing linters, security plugins during development phase for faster feedback and remediation before it lands on production
-- Introduce Code and Dependency scanning as a part of CI
-- Define Quality gate like unit test coverage, vulnerabiilty count/type..
-- Minimizing dependency, write custom code whenever possible
-- if critical may be pen testing
-- Minimze the responsiblity and break as a separate micro-server if too much responsibility.
+```bash
+go run .
+# or
+PORT=8080 OTEL_SERVICE_NAME=demo-app go run .
+```
+
+Build and run via Docker:
+
+```bash
+docker build -t otel-demo:dev .
+docker run -p 8080:8080 otel-demo:dev
+```
+
+## Configuration
+
+The service is configured entirely through environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `8080` | HTTP listen port |
+| `OTEL_SERVICE_NAME` | `demo-app` | Service name reported to the collector |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `otel-collector.monitoring.svc.cluster.local:4317` | OTLP/gRPC collector endpoint |
+
+## Docker image
+
+Multi-arch images (`linux/amd64`, `linux/arm64`) are published to Docker Hub on every merge to `main`:
+
+```
+docker pull balman/otel-demo:latest
+```
+
+## Helm chart
+
+The chart lives in `helm/` and is published to GitHub Pages as a Helm repository.
+
+```bash
+helm repo add otel-app https://rbalman.github.io/otel-app
+helm repo update
+helm install demo otel-app/otel-app-chart
+```
+
+For the full values reference, Ingress/HPA examples, and probe configuration see [`helm/README.md`](helm/README.md).
+
+## CI
+
+Two GitHub Actions workflows run on pushes to `main`:
+
+| Workflow | Trigger | What it does |
+|----------|---------|--------------|
+| `release.yaml` | Changes to Go source or Dockerfile | `go vet`, `govulncheck`, multi-arch Docker build, Trivy image scan, push to Docker Hub, create GitHub release |
+| `helm-release.yaml` | Changes under `helm/` | `helm lint --strict`, dry-run render, publish chart to GitHub Pages via chart-releaser |
+
+The two workflows are path-scoped so a chart-only change doesn't rebuild the image, and a code-only change doesn't re-release the chart.
+
+## Design Decisions
+
+- OTel SDK for instrumenting app, gives unified approach for metrics, logs and traces.
+- Helm chart CI and publish in gh_pages
+- Container Security Best Practices
+  - Runs as a non-root user (`65534:65534`)
+  - Read-only root filesystem
+  - All Linux capabilities dropped
+  - `allowPrivilegeEscalation: false`
+- Image Security Best pratices 
+  - Final image is based on `scratch` base image
+  - Image scanned for `CRITICAL` CVEs on every build (results uploaded to the GitHub Security tab)
+  - Multi platform `linux/arm64` and `linux/amd64` image build/push
