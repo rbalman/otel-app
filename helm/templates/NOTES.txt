@@ -24,6 +24,6 @@ Endpoints:
 HPA is enabled ({{ .Values.hpa.minReplicas }}–{{ .Values.hpa.maxReplicas }} replicas).
 {{- end }}
 
-{{- if .Values.serviceMonitor.enabled }}
-ServiceMonitor is enabled. Metrics are scraped by Prometheus every {{ .Values.serviceMonitor.interval }}.
+{{- if .Values.podAnnotations }}
+Pod annotations are set. OTel collector will scrape metrics via pod annotations.
 {{- end }}

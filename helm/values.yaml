@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: demo-app
+  repository: balman/otel-demo
   tag: v0.0.3
   pullPolicy: IfNotPresent
 
@@ -34,10 +34,11 @@ probes:
     periodSeconds: 2
     failureThreshold: 15
 
-otel:
-  serviceName: demo-app
-  endpoint: otel-collector.monitoring.svc.cluster.local:4317
-  resourceAttributes: ""
+extraEnvs:
+  - name: OTEL_SERVICE_NAME
+    value: demo-app
+  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    value: otel-collector.monitoring.svc.cluster.local:4317
 
 podAnnotations:
   prometheus.io/scrape: "true"
