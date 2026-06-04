@@ -39,10 +39,10 @@ otel:
   endpoint: otel-collector.monitoring.svc.cluster.local:4317
   resourceAttributes: ""
 
-serviceMonitor:
-  enabled: true
-  interval: 15s
-  release: prom-stack
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: /metrics
+  prometheus.io/port: "8080"
 
 ingress:
   enabled: false
