@@ -1,0 +1,23 @@
+# build output
+/demo
+/demo-*
+
+# test & coverage
+*.test
+coverage.out
+coverage.html
+
+# dependency vendor (if ever used)
+vendor/
+
+# environment & secrets
+.env
+.env.*
+
+# ide
+.idea/
+.vscode/
+*.swp
+
+# os
+.DS_Store

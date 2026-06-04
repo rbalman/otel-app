@@ -1,0 +1,6 @@
+# everything by default, whitelist what the build needs
+**
+
+!go.mod
+!go.sum
+!**/*.go
