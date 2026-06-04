@@ -1,9 +1,10 @@
-FROM golang:1.25-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
+ARG TARGETARCH
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /demo .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o /demo .
 
 FROM scratch
 USER 65534:65534
