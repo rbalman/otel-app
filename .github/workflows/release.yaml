@@ -80,7 +80,7 @@ jobs:
           provenance: false  # not supported with load=true
 
       - name: trivy scan
-        uses: aquasecurity/trivy-action@0.31.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
           format: sarif

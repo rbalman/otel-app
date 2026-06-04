@@ -1,0 +1,53 @@
+name: Helm Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'helm/**'
+      - '.github/workflows/helm-*.yaml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'helm/**'
+      - '.github/workflows/helm-*.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: write # push releases and update gh-pages index
+
+jobs:
+  # ── 1. lint & validate ───────────────────────────────────────────────────────
+  lint:
+    name: lint & validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: azure/setup-helm@v4.2.0
+
+      - name: lint
+        run: helm lint helm/ --strict
+
+      - name: dry-run render
+        run: helm template demo helm/ > /dev/null
+
+  # ── 2. publish ───────────────────────────────────────────────────────────────
+  #    chart-releaser packages the chart, creates a GitHub Release,
+  #    and updates index.yaml on the gh-pages branch.
+  #    to trigger a new release: bump version in helm/Chart.yaml.
+  publish:
+    name: publish chart
+    runs-on: ubuntu-latest
+    needs: lint
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      - uses: helm/chart-releaser-action@v1.7.0
+        with:
+          charts_dir: .
+        env:
+          CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
